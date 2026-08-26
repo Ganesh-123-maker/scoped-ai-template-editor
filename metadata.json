@@ -1,0 +1,6 @@
+{
+  "name": "Scoped AI Template Editor",
+  "description": "A robust responsive website builder prototype featuring deterministic scoped AI edits, per-element & per-viewport recovery, and real-time canvas-code sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
