@@ -4,6 +4,8 @@
 
 **Visual Editing · Scoped AI · Code Sync · Revision History · Granular Recovery**
 
+**Live Applet URL**: [https://ais-pre-7t2sjixpachiebv5dni6au-529376736070.asia-southeast1.run.app](https://ais-pre-7t2sjixpachiebv5dni6au-529376736070.asia-southeast1.run.app)
+
 ---
 
 ## Overview
