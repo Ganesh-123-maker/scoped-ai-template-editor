@@ -1,10 +1,14 @@
 # Scoped AI Template Editor
 
-> Controlled AI editing for responsive websites with reviewable proposals, synchronized code, and granular recovery.
+A controlled AI-assisted visual editor for responsive websites.
 
-**Visual Editing · Scoped AI · Code Sync · Revision History · Granular Recovery**
+AI proposes scoped changes.
+Users review them.
+Accepted changes pass through validation and become recoverable revisions.
 
-**Live Applet URL**: [https://ais-pre-7t2sjixpachiebv5dni6au-529376736070.asia-southeast1.run.app](https://ais-pre-7t2sjixpachiebv5dni6au-529376736070.asia-southeast1.run.app)
+## Screenshots
+
+*Visual Editor, Scoped AI Proposal Review, History & Granular Recovery, and Bidirectional Code Sync.*
 
 ---
 
@@ -15,39 +19,6 @@ Traditional visual website editors offer direct manipulation of UI properties, b
 The **Scoped AI Template Editor** introduces a disciplined, production-grade paradigm: **AI is treated as a scoped proposal generator rather than a direct state mutator**. Users retain complete visual and programmatic authority over their template at all times.
 
 Every operation in the editor—whether initiated by visual inspector controls, JSON code modifications, scoped AI prompts, or revision rollbacks—flows through a single deterministic validation and commit pipeline. This architecture guarantees strict state immutability, optimistic concurrency protection, and seamless bidirectional synchronization between code and canvas.
-
----
-
-## Why This Project?
-
-Most AI-assisted editors fail in production because they blur the boundary between AI generation and state management. When an AI agent directly mutates a live document:
-1. Unintended side-effects overwrite adjacent elements and responsive configurations.
-2. Users lose visibility into what changed and why.
-3. Reviewing diffs becomes impossible before destructive commits take place.
-4. History becomes a fragile string of full-state snapshots with no ability to restore individual properties.
-
-This project solves these fundamental problems by cleanly decoupling **Intent**, **Proposal**, **Review**, **Validation**, and **Commit**:
-
-```
-Intent  ──▶  Scoped Proposal  ──▶  User Review  ──▶  Validation  ──▶  Commit  ──▶  Canonical State
-```
-
-Users visually scope the AI by selecting specific elements and active viewports. The AI generates explicit before/after diff proposals that users can accept, reject, or cherry-pick item-by-item before any change affects the canonical state.
-
----
-
-## Quick Evaluation
-
-To test the application in 2 minutes:
-
-1. **Run the Application**: Ensure the app is loaded on Desktop view.
-2. **Visual Edit**: Click the **Hero Title** on the canvas, and change its font size in the Properties panel.
-3. **Responsive Edit**: Switch to **Mobile** viewport, adjust the heading font size, and switch back to **Desktop** to verify desktop styling is preserved.
-4. **Scoped AI**: Select 3 feature cards, prompt AI *"Make these cards more rounded"*, and observe that the canvas does not change.
-5. **Review Proposal**: Reject Card 1, accept Cards 2 and 3, and verify changes are applied selectively.
-6. **Revision History & Granular Recovery**: Open the **History** tab, inspect past changes, and restore a single property.
-7. **Code Synchronization**: Switch to the **Code** tab, edit JSON, commit, and observe the live canvas update.
-8. **Undo / Redo**: Use `Ctrl+Z` / `Ctrl+Y` to step backwards and forwards across manual, AI, and code edits.
 
 ---
 
@@ -86,15 +57,21 @@ To test the application in 2 minutes:
 
 ---
 
-## Design Principles
+## Why Scoped AI?
 
-- **Canonical state is the single source of truth**: No subsystem directly mutates or bypasses the central `TemplateModel`.
-- **AI produces proposals, not direct mutations**: AI operations are always non-destructive until reviewed and accepted by the user.
-- **Every committed mutation is represented as an EditCommand**: Standardizes visual, code, AI, and recovery inputs.
-- **Validation happens before commit**: Rejects invalid CSS, malformed JSON, out-of-bounds metrics, or security risks before state changes.
-- **History records successful changes**: Append-only log with source tagging and per-property before/after deltas.
-- **Recovery creates new revisions rather than destroying history**: Chronological integrity is strictly preserved.
-- **Responsive values remain scoped to their viewport**: Overrides cascade downward without leaking upward to base desktop styles.
+Most AI-assisted editors fail in production because they blur the boundary between AI generation and state management. When an AI agent directly mutates a live document:
+1. Unintended side-effects overwrite adjacent elements and responsive configurations.
+2. Users lose visibility into what changed and why.
+3. Reviewing diffs becomes impossible before destructive commits take place.
+4. History becomes a fragile string of full-state snapshots with no ability to restore individual properties.
+
+This project solves these fundamental problems by cleanly decoupling **Intent**, **Proposal**, **Review**, **Validation**, and **Commit**:
+
+```
+Intent  ──▶  Scoped Proposal  ──▶  User Review  ──▶  Validation  ──▶  Commit  ──▶  Canonical State
+```
+
+Users visually scope the AI by selecting specific elements and active viewports. The AI generates explicit before/after diff proposals that users can accept, reject, or cherry-pick item-by-item before any change affects the canonical state.
 
 ---
 
@@ -136,10 +113,7 @@ Every state mutation in the application flows through a single unified pipeline:
                            Granular Recovery
 ```
 
----
-
-## AI Safety Model
-
+### AI Safety Model
 1. **Strict Selection Authority**: AI prompts can only modify elements that are currently selected. Unselected nodes are mathematically inaccessible to the AI generator.
 2. **Viewport Containment**: Responsive AI commands are confined to the active viewport (e.g., mobile prompts generate mobile overrides, never polluting desktop base styles).
 3. **No Direct State Mutation**: AI routines produce isolated JSON proposal objects; they possess zero direct write access to the template store.
@@ -204,30 +178,6 @@ For complete step-by-step evaluator instructions, see [DEMO.md](DEMO.md).
 - **Animation**: Motion (`motion/react`)
 - **Build Tool**: Vite 6
 - **Test Runner**: Vitest (86 unit and integration tests)
-
----
-
-## Project Structure
-
-```
-├── src/
-│   ├── code/                  # Monaco JSON editor, validators & schema parsers
-│   ├── commands/              # Unified Command Pipeline (validate.ts, apply.ts)
-│   ├── components/            # UI Components (canvas, inspector, layout, modals, panels)
-│   ├── core/                  # Deterministic Scoped AI Engine (aiScenarioEngine.ts)
-│   ├── data/                  # Initial baseline template definitions
-│   ├── model/                 # Canonical template types & node schemas
-│   ├── responsive/            # Viewport inheritance & cascade engine
-│   ├── store/                 # Zustand store (Selection, History, Undo/Redo)
-│   ├── types/                 # Shared template interfaces
-│   ├── App.tsx                # Main IDE application shell
-│   └── main.tsx               # Client entry point
-├── DEMO.md                    # Step-by-step evaluator script
-├── ARCHITECTURE.md            # Detailed technical specification & diagrams
-├── FEATURES.md                # Feature completion & demonstration matrix
-├── metadata.json              # Applet metadata
-└── package.json               # Scripts & dependencies
-```
 
 ---
 
