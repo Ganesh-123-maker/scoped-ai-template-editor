@@ -1,106 +1,134 @@
-# Product Notes & Technical Contract
+# Product Notes (PRODUCT_NOTES.md)
 
-## 1. Primary User, Job, and Definition of a Safe Completed Template Edit
-
-### Primary User
-A non-technical or semi-technical small business owner, founder, or marketing operator adapting an existing website template for their company.
-
-### Primary Job
-Make high-impact visual, content, and responsive adjustments quickly without breaking other screen sizes, corrupting underlying layouts, or losing the ability to roll back individual mistakes.
-
-### Definition of a Safe Completed Template Edit
-An edit is considered safe and completed when:
-1. **Validated**: It has passed strict runtime schema validation (target IDs exist, properties are in the allowed whitelist, viewport scope is valid, and base revision matches).
-2. **Committed**: It is written to the canonical `TemplateModel` state with an incremented version number.
-3. **Isolated**: Viewport overrides do not leak to unselected viewports, and unselected elements remain bit-for-bit identical.
-4. **Logged**: A new `HistoryEntry` is generated containing granular element snapshots for future independent recovery.
-5. **Persisted**: The resulting state is safely serialized to local persistent storage.
+This document provides formal architectural, operational, and UX definitions for the **Scoped AI Template Editor**, detailing the target persona, state model, responsive cascade rules, and security/safety guarantees.
 
 ---
 
-## 2. Definitions
+## 1. User & Job-to-be-Done
 
-- **Element**: A modular, typed UI unit identified by a permanent string ID (e.g. `hero-title`). It defines a semantic `type` (`heading`, `button`, `card`, etc.), a `base` properties object, and an `overrides` dictionary for specific viewports.
-- **Group Selection**: An explicit array of stable element IDs (`selectedIds: string[]`). It is never inferred from CSS selectors, DOM ordering, or text matching.
-- **Committed Step**: An immutable mutation executed through `applyEditCommand()` that produces a new incremented template revision and corresponding history record.
-- **Viewport Scope**: The targeted execution environment for a change: `'all'` (updates shared base properties) or `'desktop' | 'tablet' | 'mobile'` (updates only that viewport's override map).
-- **Editable Property Boundary**: The strict whitelist of safe, styling, content, and layout properties defined in `ALLOWED_EDITABLE_FIELDS` (e.g., `text`, `fontSize`, `backgroundColor`, `borderRadius`, `paddingTop`, etc.). Arbitrary keys or code injection attempts are actively blocked.
+- **Primary Persona**: Non-technical business owners, growth marketers, and designers adapting pre-built responsive web landing pages.
+- **Core Job-to-be-Done (JTBD)**: Make high-confidence visual, copy, and layout adjustments to specific landing page sections (e.g., hero headlines, CTA buttons, feature cards) without fear of breaking responsive layouts, corrupting adjacent sections, or losing the ability to selectively undo unwanted AI or manual experiments.
+- **Pain Points Solved**:
+  - Eliminates "AI halluncinations" that randomly alter unintended page sections.
+  - Eliminates responsive breakage where desktop edits silently destroy mobile readability.
+  - Eliminates all-or-nothing rollbacks with granular, per-property historical recovery.
 
 ---
 
-## 3. Canonical State & Responsive Resolution
+## 2. Element Boundaries & State Model
 
-### Canvas and Code State Sharing
-The application maintains a single, unified `TemplateModel` in Zustand.
-- The visual canvas (`RenderElement.tsx`) reads directly from this store.
-- The code editor reflects this exact JSON representation.
-- When an edit is made in code, it is parsed and dispatched through the exact same `applyEditCommand()` pipeline as a canvas or AI edit. If code contains syntax or schema errors, an error banner is displayed and the previous valid state is preserved without mutation.
-
-### Responsive Precedence Order
-When rendering an element for an active viewport `V` (`desktop`, `tablet`, or `mobile`):
-```text
-Resolved Property = element.overrides[V][prop] ?? element.base[prop] ?? default
+### Canonical Template Tree
+The application maintains a single, normalized, JSON-serializable `TemplateModel`:
+```typescript
+interface TemplateModel {
+  id: string;
+  name: string;
+  version: number;          // Monotonically increasing revision integer
+  updatedAt: number;
+  elements: Record<string, ElementModel>;
+  rootElementIds: string[]; // Order of top-level sections
+}
 ```
-1. **Viewport Override**: Highest precedence. If set, this value is rendered for viewport `V`.
-2. **Base / Shared Property**: Applies if no override exists for viewport `V`.
-3. **Cascade Rule**: Edits made with scope `all` update the `base` property, naturally flowing to all viewports that do not have an explicit override. Edits made with scope `V` update only `overrides[V]`, leaving all other viewports strictly unchanged.
+
+### Stable Element Hierarchy
+Every element possesses a permanent, immutable identifier (e.g., `hero-section`, `hero-title`, `feature-card-1`):
+```typescript
+interface ElementModel {
+  id: string;
+  type: 'heading' | 'text' | 'button' | 'card' | 'section' | 'badge' | 'container';
+  name: string;
+  parentId?: string;
+  childrenIds?: string[];
+  base: EditableProperties;
+  overrides: {
+    desktop?: Partial<EditableProperties>;
+    tablet?: Partial<EditableProperties>;
+    mobile?: Partial<EditableProperties>;
+  };
+  revision: number;
+}
+```
+
+### Supported Editable Properties (`EditableProperties`)
+- **Content**: `text`, `label`, `href`
+- **Typography**: `fontSize`, `fontWeight`, `textAlign`, `color`, `lineHeight`, `letterSpacing`
+- **Appearance**: `backgroundColor`, `borderRadius`, `borderWidth`, `borderColor`, `opacity`, `shadow`
+- **Spacing (4-Sided)**: `paddingTop`, `paddingBottom`, `paddingLeft`, `paddingRight`, `marginTop`, `marginBottom`
+- **Layout & Sizing**: `width`, `height`, `maxWidth`, `display`, `flexDirection`, `alignItems`, `justifyContent`, `gap`
 
 ---
 
-## 4. Deterministic AI Demo & Safety Bounds
+## 3. Responsive Inheritance & Resolution Rules
 
-### Selection Authority
-The AI engine is given the active selection as an explicit constraint. The runtime validator enforces that every element targeted in an AI proposal must be an active member of `activeSelection`. If an AI proposal attempts to modify an unselected element (e.g., background container or footer), the unauthorized item is marked `invalid` and rejected.
+The editor uses an explicit, deterministic cascade model:
 
-### Stale Revision Handling
-If an AI proposal or edit command is submitted with a `baseRevision` that does not match `template.version` (e.g., if the user made canvas changes while the proposal was pending), the command is rejected with a `Stale Revision Conflict` error.
+$$\text{Resolved Value} = \text{Override}(\text{Active Viewport}) \;\gg\; \text{Override}(\text{Desktop}) \;\gg\; \text{Base Value} \;\gg\; \text{Default}$$
 
----
-
-## 5. Review, Partial Acceptance, and Recovery Policy
-
-### Proposal Review & No Automatic Overwrite
-AI output is strictly a proposal. It renders in an isolated review card displaying exact Before / After diffs. No template values mutate prior to explicit user approval.
-
-### Partial Acceptance
-In a multi-element proposal (e.g., updating 3 feature cards):
-- The user can click **Accept** on Card 1, **Reject** on Card 2, and **Accept** on Card 3.
-- The pipeline applies commands only for Cards 1 and 3. Card 2 remains in its exact baseline state.
-
-### Independent Per-Element Recovery Policy
-Rather than a destructive global undo that rolls back the entire page and destroys intervening work, the editor supports **Independent Per-Element Recovery**:
-- Users can inspect the revision history and click **"Restore This Element"** on any specific historical record.
-- The engine fetches the snapshot for that element at that revision and applies a restore command targeting only that element ID and viewport scope.
-- All other elements and other viewport overrides remain untouched.
-- The restore action itself increments the version and records a new history entry.
+1. **Shared Base (`editScope === 'all'`)**:
+   - Edits update `element.base[property]`.
+   - Propagates automatically across Desktop, Tablet, and Mobile unless an isolated override exists for that viewport.
+2. **Viewport-Isolated Overrides (`editScope === 'mobile' | 'tablet' | 'desktop'`)**:
+   - Edits update strictly `element.overrides[viewport][property]`.
+   - The base property and all other viewports remain 100% pristine.
+3. **Override Reset**:
+   - Users can click **"Reset to shared"** on any overridden property to delete `element.overrides[viewport][property]`, immediately restoring inheritance from the shared base.
 
 ---
 
-## 6. One Product Improvement: Change Summary & Audit Trail
+## 4. AI Scoping, Selection Authority & Proposal Contract
 
-### User Problem
-When non-technical users apply multi-element edits or accept AI proposals, they often feel uneasy about what exact properties changed across different viewports, leading to hesitation or inadvertent misconfigurations.
+### Absolute Selection Authority
+The AI engine is strictly sandboxed to the user's active selection:
+1. **Scope Invariant**: If element IDs `[A, B]` are selected, the AI engine is mathematically barred from mutating any element $C \notin [A, B]$.
+2. **Validator Rejection**: The unified validation pipeline (`validateCommand`) checks `command.elementIds \subseteq selectedIds`. Any proposal attempting to touch an unselected element is rejected with an explicit error.
+3. **No Direct Mutation**: The AI engine never mutates the canonical template directly. It produces an `AIProposal` with per-element diffs (`before` vs. `after`).
 
-### Chosen Feature: Granular Change Summary & Audit Trail
-After any commit (Canvas, Code, AI, or Restore), the editor computes a detailed diff record showing exact `from → to` transitions per element and viewport. This appears in the **Change Summary** tab with one-click rollback capability.
-
-### How Success Would Be Tested
-1. **User Confidence Metric**: Measure the rate of immediate undos / resets after AI proposals (lower rate indicates higher user confidence).
-2. **Task Completion Speed**: Test whether users can review and verify responsive changes 30%+ faster when provided with explicit property diffs compared to manual visual inspection alone.
+### Proposal Lifecycle
+```text
+[User Prompt / 1-Click Preset]
+        ↓
+[Deterministic AI Scenario Engine]
+        ↓
+[AIProposal Generated with baseRevision]
+        ↓
+[User Interactive Review Panel]
+   ├── Accept All / Reject All
+   ├── Per-Element Accept / Reject
+   └── Stale Proposal Detection (Alerts if template.version > baseRevision)
+        ↓
+[Unified EditCommand Committed to Store]
+```
 
 ---
 
-## 7. Cuts, Assumptions, and Next Three Priorities
+## 5. Unified Command Pipeline & Granular Recovery
 
-### Deliberate Cuts
-- No third-party AI API keys or non-deterministic LLM calls (strictly local deterministic scenario engine per specifications).
-- No external backend database server (used client-side persistent model with localStorage).
+Every state mutation—whether from the visual inspector, Monaco code editor, AI proposal acceptance, undo/redo, or history rollback—is dispatched as an `EditCommand`:
 
-### Key Assumptions
-- Screen breakpoints adhere to standard responsive widths: Desktop (1440px), Tablet (768px), and Mobile (375px).
-- Business owners prioritize safety, predictability, and localized recovery over unbounded generative variability.
+```typescript
+interface EditCommand {
+  id: string;
+  source: 'inspector' | 'code_editor' | 'ai' | 'restore' | 'undo' | 'redo';
+  elementIds: string[];
+  viewport: Viewport; // 'all' | 'desktop' | 'tablet' | 'mobile'
+  changes: Partial<EditableProperties>;
+  timestamp: number;
+}
+```
 
-### Next Three Improvements in Priority Order
-1. **Visual Regression Split Screen**: Side-by-side visual diff overlay showing ghosted before/after outlines directly on the canvas.
-2. **Reusable Component Presets**: Ability to save an element's styling as a reusable theme class across multiple sections.
-3. **Export to Next.js / Tailwind Codebase**: 1-click ZIP export generating clean TypeScript React components and Tailwind configuration.
+### Granular Property-Level Recovery
+Unlike traditional document-level undo which discards intermediate progress, the Scoped AI Template Editor supports **Independent Property Restoration**:
+- **Mechanism**: The user can open any historical revision in the History Panel, expand an element, and click **"Restore this property"** on a single property (e.g. `fontSize`).
+- **Result**: Generates a forward `EditCommand` applying that historical value to the current live revision without disturbing any edits made to other properties or other elements.
+
+---
+
+## 6. Persistence & Reset Architecture
+
+1. **Persistence Mechanism**:
+   - Canonical template state and full revision history are automatically synced to browser `localStorage` on every commit under the key:
+     `scoped_ai_template_editor_canonical_state_v1`
+   - State survives browser refreshes, tab closures, and navigation.
+2. **Deliberate Reset Project Flow**:
+   - The top header provides a **"Reset Project"** button with a confirmation modal.
+   - Clears `localStorage` and re-seeds the pristine canonical template and initial revision history entry.
