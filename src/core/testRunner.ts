@@ -7,7 +7,7 @@
 
 import { generateDeterministicAIProposal } from './aiScenarioEngine';
 import { applyEditCommand } from './pipeline';
-import { restoreElementRevision } from './recovery';
+import { restoreElementRevision, restoreSingleProperty, restoreFullRevision } from './recovery';
 import { resolveElementProperties } from './resolution';
 import { validateEditCommand, validateAIProposal } from './validation';
 import { INITIAL_TEMPLATE } from '../data/initialTemplate';
@@ -331,6 +331,146 @@ export function runAllVerificationTests(): VerificationTestResult[] {
       return {
         passed,
         note: 'Two independent AI scenario evaluations produced identical proposals.',
+      };
+    }
+  );
+
+  // 10. Full Revision Restore
+  record(
+    'test-full-revision-restore',
+    'Full Revision State Reversion',
+    'Ensures full historical state restore executes atomically via the validation pipeline.',
+    () => {
+      let current = JSON.parse(JSON.stringify(INITIAL_TEMPLATE)) as TemplateModel;
+      const originalTitle = current.elements['hero-title'].base.text;
+
+      const editRes1 = applyEditCommand(current, {
+        source: 'canvas',
+        targetIds: ['hero-title'],
+        viewport: 'all',
+        baseRevision: current.version,
+        changes: { 'hero-title': { text: 'New Mutated Title Rev 1' } },
+      });
+      current = editRes1.nextTemplate;
+      const hist1 = editRes1.historyEntry!.id;
+
+      const editRes2 = applyEditCommand(current, {
+        source: 'canvas',
+        targetIds: ['feature-1-title'],
+        viewport: 'all',
+        baseRevision: current.version,
+        changes: { 'feature-1-title': { text: 'New Mutated Feature Rev 2' } },
+      });
+      current = editRes2.nextTemplate;
+
+      const restoreRes = restoreFullRevision(current, hist1);
+      const passed =
+        restoreRes.success &&
+        restoreRes.nextTemplate.elements['hero-title'].base.text === originalTitle &&
+        restoreRes.nextTemplate.version > editRes2.nextTemplate.version;
+
+      return {
+        passed,
+        note: 'Full template revision restored safely via new chronological revision entry.',
+      };
+    }
+  );
+
+  // 11. Single Property Historical Recovery
+  record(
+    'test-single-property-recovery',
+    'Single Property Historical Recovery',
+    'Restores a single property of an element while keeping other properties updated.',
+    () => {
+      let current = JSON.parse(JSON.stringify(INITIAL_TEMPLATE)) as TemplateModel;
+      const originalFontSize = current.elements['hero-title'].base.fontSize;
+
+      const editRes = applyEditCommand(current, {
+        source: 'canvas',
+        targetIds: ['hero-title'],
+        viewport: 'all',
+        baseRevision: current.version,
+        changes: { 'hero-title': { text: 'Altered Text', fontSize: 64 } },
+      });
+      current = editRes.nextTemplate;
+      const histId = editRes.historyEntry!.id;
+
+      const restorePropRes = restoreSingleProperty(current, 'hero-title', 'fontSize', 'all', histId);
+      const passed =
+        restorePropRes.success &&
+        restorePropRes.nextTemplate.elements['hero-title'].base.fontSize === originalFontSize &&
+        restorePropRes.nextTemplate.elements['hero-title'].base.text === 'Altered Text';
+
+      return {
+        passed,
+        note: 'Restored font size back to baseline while preserving the altered text property.',
+      };
+    }
+  );
+
+  // 12. Undo / Redo Pipeline Verification
+  record(
+    'test-undo-redo-cycle',
+    'Undo & Redo Pipeline Invariance',
+    'Verifies inverse delta generation and chronological redo reapplication.',
+    () => {
+      let current = JSON.parse(JSON.stringify(INITIAL_TEMPLATE)) as TemplateModel;
+      const originalText = current.elements['hero-title'].base.text;
+
+      // 1. Commit an edit
+      const editRes = applyEditCommand(current, {
+        source: 'canvas',
+        targetIds: ['hero-title'],
+        viewport: 'all',
+        baseRevision: current.version,
+        changes: { 'hero-title': { text: 'Changed via Canvas' } },
+        summary: 'Canvas edit',
+      });
+      current = editRes.nextTemplate;
+
+      // 2. Compute undo command
+      const topEntry = current.history[0];
+      const undoChanges: Record<string, any> = {};
+      for (const id of topEntry.elementIds) {
+        if (topEntry.changes?.[id]?.before) {
+          undoChanges[id] = topEntry.changes[id].before;
+        }
+      }
+      const undoRes = applyEditCommand(current, {
+        source: 'restore',
+        targetIds: topEntry.elementIds,
+        viewport: topEntry.viewport,
+        baseRevision: current.version,
+        changes: undoChanges,
+        summary: `Undo: ${topEntry.summary}`,
+      });
+      current = undoRes.nextTemplate;
+
+      const undoPassed = current.elements['hero-title'].base.text === originalText;
+
+      // 3. Compute redo command
+      const restoreEntry = current.history[0];
+      const redoChanges: Record<string, any> = {};
+      for (const id of restoreEntry.elementIds) {
+        if (restoreEntry.changes?.[id]?.before) {
+          redoChanges[id] = restoreEntry.changes[id].before;
+        }
+      }
+      const redoRes = applyEditCommand(current, {
+        source: 'restore',
+        targetIds: restoreEntry.elementIds,
+        viewport: restoreEntry.viewport,
+        baseRevision: current.version,
+        changes: redoChanges,
+        summary: 'Redo',
+      });
+      current = redoRes.nextTemplate;
+
+      const redoPassed = current.elements['hero-title'].base.text === 'Changed via Canvas';
+
+      return {
+        passed: undoPassed && redoPassed,
+        note: 'Undo reverted text to baseline and Redo successfully reapplied the change.',
       };
     }
   );

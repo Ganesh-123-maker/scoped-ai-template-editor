@@ -6,6 +6,7 @@ import { InspectorPanel } from './components/inspector/InspectorPanel';
 import { BottomPanel } from './components/panels/BottomPanel';
 import { ResetModal } from './components/modals/ResetModal';
 import { ShortcutsModal } from './components/modals/ShortcutsModal';
+import { ArchitectureModal } from './components/modals/ArchitectureModal';
 import { Toast } from './components/ui/Toast';
 import { useEditorStore } from './store/useEditorStore';
 
@@ -18,6 +19,8 @@ export default function App() {
     clearSelection,
     selectedIds,
     deleteElement,
+    undo,
+    redo,
   } = useEditorStore();
 
   // Global Keyboard Shortcuts
@@ -26,6 +29,19 @@ export default function App() {
       // Don't trigger when typing in inputs / textareas
       const activeTag = document.activeElement?.tagName.toLowerCase();
       const isInput = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+
+      // Global Undo/Redo shortcuts (working even if focus is outside text inputs)
+      if ((e.ctrlKey || e.metaKey) && !isInput) {
+        if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+          return;
+        } else if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+      }
 
       if (e.key === 'Escape') {
         clearSelection();
@@ -67,6 +83,8 @@ export default function App() {
     clearSelection,
     selectedIds,
     deleteElement,
+    undo,
+    redo,
   ]);
 
   return (
@@ -92,6 +110,7 @@ export default function App() {
       {/* Modals & Toasts */}
       <ResetModal />
       <ShortcutsModal />
+      <ArchitectureModal />
       <Toast />
     </div>
   );

@@ -4,6 +4,8 @@ import {
   Tablet,
   Smartphone,
   RotateCcw,
+  Undo2,
+  Redo2,
   Code,
   History,
   CheckCircle2,
@@ -12,6 +14,7 @@ import {
   Sparkles,
   FlaskConical,
   ShieldCheck,
+  Workflow,
 } from 'lucide-react';
 import { useEditorStore } from '../../store/useEditorStore';
 import { ActiveViewport, Viewport } from '../../types/template';
@@ -30,7 +33,12 @@ export const TopToolbar: React.FC = () => {
     setActiveInspectorTab,
     openResetModal,
     openShortcutsModal,
+    openArchitectureModal,
     selectedIds,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useEditorStore();
 
   const viewportOptions: Array<{ id: ActiveViewport; label: string; width: string; icon: React.ReactNode }> = [
@@ -39,12 +47,15 @@ export const TopToolbar: React.FC = () => {
     { id: 'mobile', label: VIEWPORT_CONFIG.mobile.label, width: `${VIEWPORT_CONFIG.mobile.width}px`, icon: <Smartphone className="w-3.5 h-3.5" /> },
   ];
 
+  const hasUndo = canUndo();
+  const hasRedo = canRedo();
+
   return (
     <header
       id="top-toolbar"
       className="h-14 bg-[#0d0d0d] text-[#e0e0e0] border-b border-[#222222] px-4 flex items-center justify-between select-none z-30"
     >
-      {/* Left: Branding & Status */}
+      {/* Left: Branding & Status & Undo/Redo */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/20">
@@ -61,6 +72,36 @@ export const TopToolbar: React.FC = () => {
         </div>
 
         <div className="h-4 w-px bg-[#222222] mx-1 hidden sm:block" />
+
+        {/* Quick Undo / Redo controls */}
+        <div className="flex items-center bg-[#141414] border border-[#222222] rounded-lg p-0.5 shadow-inner">
+          <button
+            id="top-undo-btn"
+            onClick={() => undo()}
+            disabled={!hasUndo}
+            className={`p-1.5 rounded text-xs transition-colors flex items-center gap-1 ${
+              hasUndo
+                ? 'text-[#cccccc] hover:text-white hover:bg-[#1e1e1e] cursor-pointer'
+                : 'text-[#444444] cursor-not-allowed'
+            }`}
+            title="Undo last change (Ctrl+Z / Cmd+Z)"
+          >
+            <Undo2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            id="top-redo-btn"
+            onClick={() => redo()}
+            disabled={!hasRedo}
+            className={`p-1.5 rounded text-xs transition-colors flex items-center gap-1 ${
+              hasRedo
+                ? 'text-[#cccccc] hover:text-white hover:bg-[#1e1e1e] cursor-pointer'
+                : 'text-[#444444] cursor-not-allowed'
+            }`}
+            title="Redo previous restore (Ctrl+Y / Cmd+Shift+Z)"
+          >
+            <Redo2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
         <div className="hidden lg:flex items-center gap-2 text-xs text-[#888888]">
           <span className="font-mono text-[#cccccc]">Rev #{template.version}</span>
@@ -171,7 +212,17 @@ export const TopToolbar: React.FC = () => {
           </button>
         </div>
 
-        {/* Shortcuts & Reset */}
+        {/* Architecture, Shortcuts & Reset */}
+        <button
+          id="architecture-info-btn"
+          onClick={openArchitectureModal}
+          className="p-1.5 text-[#888888] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors flex items-center gap-1 text-xs"
+          title="View Architecture Pipeline & Safety Guarantees"
+        >
+          <Workflow className="w-4 h-4 text-blue-400" />
+          <span className="hidden lg:inline text-[#cccccc]">Architecture</span>
+        </button>
+
         <button
           id="shortcuts-btn"
           onClick={openShortcutsModal}

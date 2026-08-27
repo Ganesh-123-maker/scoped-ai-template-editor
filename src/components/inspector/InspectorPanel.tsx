@@ -21,6 +21,7 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  RefreshCw,
 } from 'lucide-react';
 import { useEditorStore } from '../../store/useEditorStore';
 import { DOCUMENTED_AI_PRESETS } from '../../core/aiScenarioEngine';
@@ -1178,10 +1179,14 @@ export const InspectorPanel: React.FC = () => {
                         ? 'bg-rose-950 text-rose-300 border border-rose-800'
                         : activeProposal.status === 'invalid'
                         ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                        : activeProposal.status === 'stale'
+                        ? 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
                         : 'bg-blue-950 text-blue-300 border border-blue-800'
                     }`}
                   >
-                    {activeProposal.status.replace('_', ' ')}
+                    {activeProposal.status === 'stale'
+                      ? `Stale (Rev #${activeProposal.baseRevision})`
+                      : activeProposal.status.replace('_', ' ')}
                   </span>
                 </div>
 
@@ -1189,13 +1194,30 @@ export const InspectorPanel: React.FC = () => {
                   "{activeProposal.instruction}"
                 </div>
 
-                {/* Validation error if any */}
-                {activeProposal.validationError && (
+                {/* Stale or Validation error banner */}
+                {activeProposal.status === 'stale' ? (
+                  <div className="p-2.5 bg-amber-950/60 border border-amber-800/80 rounded-lg text-amber-200 text-[11px] space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                      <span>Stale Proposal Detected</span>
+                    </div>
+                    <p className="text-[#cccccc] text-[10px] leading-tight">
+                      Generated at Rev #{activeProposal.baseRevision}, but template is at Rev #{template.version}. Changes cannot be safely applied.
+                    </p>
+                    <button
+                      id="ai-regenerate-proposal-btn"
+                      onClick={() => handleAIExecute(activeProposal.instruction)}
+                      className="w-full mt-1 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Regenerate on Current Revision
+                    </button>
+                  </div>
+                ) : activeProposal.validationError ? (
                   <div className="p-2 bg-rose-950/50 border border-rose-800/80 rounded-lg text-rose-300 text-[11px] flex items-start gap-1.5">
                     <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
                     <span>{activeProposal.validationError}</span>
                   </div>
-                )}
+                ) : null}
 
                 {/* Per-Element Proposal Items */}
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">

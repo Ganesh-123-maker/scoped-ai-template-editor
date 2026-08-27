@@ -1,7 +1,119 @@
-import { isValidElementType, VALID_ELEMENT_TYPES } from '../model/elementTypes';
-import { ALLOWED_EDITABLE_FIELDS, isPropertyAllowed, validatePropertyValue } from '../model/properties';
+import { isValidElementType, SUPPORTED_ELEMENT_TYPES } from '../model/elementTypes';
+import { ALLOWED_EDITABLE_FIELDS, isPropertyAllowed } from '../model/properties';
 import { ElementModel, TemplateModel } from '../types/template';
 import { CodeError } from './types';
+
+/**
+ * Validates a single property value against type boundaries and physical ranges.
+ */
+export function validatePropertyValue(
+  prop: string,
+  value: unknown
+): { valid: boolean; error?: string } {
+  if (value === undefined || value === null) {
+    return { valid: true };
+  }
+
+  switch (prop) {
+    case 'fontSize':
+      if (typeof value !== 'number' || isNaN(value) || value <= 0 || value > 250) {
+        return { valid: false, error: `Font size must be a number between 1 and 250, got ${value}.` };
+      }
+      return { valid: true };
+
+    case 'opacity':
+      if (typeof value !== 'number' || isNaN(value) || value < 0 || value > 1) {
+        return { valid: false, error: `Opacity must be a number between 0 and 1, got ${value}.` };
+      }
+      return { valid: true };
+
+    case 'fontWeight':
+      if (typeof value === 'number') {
+        if (value < 100 || value > 900) {
+          return { valid: false, error: `Font weight numeric value must be between 100 and 900, got ${value}.` };
+        }
+      } else if (typeof value === 'string') {
+        const validWeights = new Set(['normal', 'medium', 'semibold', 'bold', 'extrabold', '100', '200', '300', '400', '500', '600', '700', '800', '900']);
+        if (!validWeights.has(value)) {
+          return { valid: false, error: `Invalid font weight string "${value}".` };
+        }
+      } else {
+        return { valid: false, error: 'Font weight must be a string or number.' };
+      }
+      return { valid: true };
+
+    case 'textAlign':
+      if (typeof value !== 'string' || !['left', 'center', 'right', 'justify'].includes(value)) {
+        return { valid: false, error: `Text align must be 'left', 'center', 'right', or 'justify', got "${value}".` };
+      }
+      return { valid: true };
+
+    case 'borderRadius':
+    case 'borderWidth':
+    case 'padding':
+    case 'paddingTop':
+    case 'paddingBottom':
+    case 'paddingLeft':
+    case 'paddingRight':
+    case 'gap':
+    case 'gridColumns':
+    case 'x':
+    case 'y':
+      if (typeof value !== 'number' || isNaN(value) || value < 0 || value > 1000) {
+        return { valid: false, error: `${prop} must be a non-negative number <= 1000, got ${value}.` };
+      }
+      return { valid: true };
+
+    case 'margin':
+    case 'marginTop':
+    case 'marginBottom':
+    case 'marginLeft':
+    case 'marginRight':
+      if (typeof value !== 'number' && typeof value !== 'string') {
+        return { valid: false, error: `${prop} must be a number or string.` };
+      }
+      if (typeof value === 'number' && (isNaN(value) || Math.abs(value) > 1000)) {
+        return { valid: false, error: `${prop} number value must be <= 1000.` };
+      }
+      return { valid: true };
+
+    case 'lineHeight':
+    case 'letterSpacing':
+    case 'width':
+    case 'maxWidth':
+    case 'minWidth':
+    case 'height':
+    case 'minHeight':
+      if (typeof value !== 'string' && typeof value !== 'number') {
+        return { valid: false, error: `${prop} must be a string or number.` };
+      }
+      return { valid: true };
+
+    case 'text':
+    case 'label':
+    case 'badgeText':
+    case 'href':
+    case 'src':
+    case 'alt':
+    case 'iconName':
+    case 'color':
+    case 'backgroundColor':
+    case 'borderColor':
+    case 'border':
+    case 'shadow':
+    case 'display':
+    case 'flexDirection':
+    case 'alignItems':
+    case 'justifyContent':
+      if (typeof value !== 'string') {
+        return { valid: false, error: `${prop} must be a string.` };
+      }
+      return { valid: true };
+
+    default:
+      return { valid: true };
+  }
+}
 
 /**
  * Forbidden security tokens that must never appear in template code
@@ -142,7 +254,7 @@ export function validateParsedTemplate(template: any): { valid: boolean; errors:
     if (!el.type || typeof el.type !== 'string' || !isValidElementType(el.type)) {
       errors.push({
         code: 'UNSUPPORTED_ELEMENT_TYPE',
-        message: `Unsupported element type: "${el.type || 'undefined'}". Supported types are: ${VALID_ELEMENT_TYPES.join(', ')}.`,
+        message: `Unsupported element type: "${el.type || 'undefined'}". Supported types are: ${SUPPORTED_ELEMENT_TYPES.join(', ')}.`,
         elementId: key,
       });
       continue;

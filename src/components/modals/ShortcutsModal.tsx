@@ -8,6 +8,8 @@ export const ShortcutsModal: React.FC = () => {
   if (!isShortcutsModalOpen) return null;
 
   const shortcuts = [
+    { key: 'Ctrl + Z / ⌘Z', desc: 'Undo last action' },
+    { key: 'Ctrl + Y / ⌘⇧Z', desc: 'Redo previously reverted action' },
     { key: 'Shift + Click', desc: 'Add or remove element from multi-selection' },
     { key: 'Drag Canvas Background', desc: 'Marquee box multi-select elements' },
     { key: 'Tab / Shift + Tab', desc: 'Navigate selectable elements with keyboard' },

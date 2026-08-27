@@ -1,5 +1,6 @@
 {
-  "name": "react-example",
+  "name": "scoped-ai-template-editor",
+  "description": "Controlled AI editing for responsive websites with reviewable proposals, synchronized code, and granular recovery.",
   "private": true,
   "version": "0.0.0",
   "type": "module",

@@ -12,11 +12,16 @@ import {
   Sliders,
   Check,
   ChevronRight,
+  ChevronDown,
   ShieldCheck,
+  Search,
+  MousePointer,
+  Filter,
 } from 'lucide-react';
 import { useEditorStore } from '../../store/useEditorStore';
 import { runAllVerificationTests, VerificationTestResult } from '../../core/testRunner';
-import { Viewport } from '../../types/template';
+import { EditableProperties, Viewport } from '../../types/template';
+import { CodeEditorTab } from './CodeEditorTab';
 
 export const BottomPanel: React.FC = () => {
   const {
@@ -28,14 +33,24 @@ export const BottomPanel: React.FC = () => {
     applyCodeEdits,
     template,
     restoreElement,
+    restoreProperty,
+    restoreRevision,
     latestChangeSummary,
     selectedIds,
+    setSelectedIds,
   } = useEditorStore();
 
   const [testResults, setTestResults] = useState<VerificationTestResult[] | null>(null);
   const [isRunningTests, setIsRunningTests] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historySourceFilter, setHistorySourceFilter] = useState<'all' | 'canvas' | 'code' | 'ai' | 'restore'>('all');
+  const [expandedEntries, setExpandedEntries] = useState<Record<string, boolean>>({});
 
   if (!bottomPanelTab) return null;
+
+  const toggleExpandEntry = (id: string) => {
+    setExpandedEntries((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const handleRunTests = async () => {
     setIsRunningTests(true);
@@ -46,6 +61,24 @@ export const BottomPanel: React.FC = () => {
       setIsRunningTests(false);
     }, 150);
   };
+
+  // Filtered history entries
+  const filteredHistory = template.history.filter((entry) => {
+    if (historySourceFilter !== 'all' && entry.source !== historySourceFilter) {
+      return false;
+    }
+    if (historySearch.trim()) {
+      const q = historySearch.toLowerCase();
+      const matchSummary = entry.summary?.toLowerCase().includes(q);
+      const matchElements = entry.elementIds.some(
+        (id) => id.toLowerCase().includes(q) || template.elements[id]?.name.toLowerCase().includes(q)
+      );
+      const matchSource = entry.source.toLowerCase().includes(q);
+      const matchRev = String(entry.newRevision).includes(q) || String(entry.baseRevision).includes(q);
+      return matchSummary || matchElements || matchSource || matchRev;
+    }
+    return true;
+  });
 
   return (
     <div
@@ -120,144 +153,234 @@ export const BottomPanel: React.FC = () => {
       {/* Panel Body */}
       <div className="flex-1 overflow-auto p-3 font-sans">
         {/* TAB 1: CODE EDITOR */}
-        {bottomPanelTab === 'code' && (
-          <div className="h-full flex flex-col space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-[#888888]">
-                  Editing: <span className="font-mono text-blue-400">
-                    {selectedIds.length === 1 ? `element #${selectedIds[0]}` : 'full template elements map'}
-                  </span>
-                </span>
-                <span className="text-[#444444]">•</span>
-                <span className="text-[11px] text-[#888888]">Two-way synchronized with Canvas</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    try {
-                      const formatted = JSON.stringify(JSON.parse(codeDraft), null, 2);
-                      setCodeDraft(formatted);
-                    } catch (e) {
-                      // ignore
-                    }
-                  }}
-                  className="px-2 py-1 bg-[#161616] hover:bg-[#222222] text-[#cccccc] rounded text-xs border border-[#262626]"
-                >
-                  Format JSON
-                </button>
-                <button
-                  id="code-apply-btn"
-                  onClick={applyCodeEdits}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold shadow-sm transition-colors flex items-center gap-1"
-                >
-                  <Play className="w-3 h-3" /> Apply Code Changes
-                </button>
-              </div>
-            </div>
-
-            {codeError && (
-              <div className="p-2 bg-rose-950/60 border border-rose-800/80 rounded-lg text-rose-300 text-xs flex items-start gap-1.5 font-mono">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-                <div className="whitespace-pre-wrap">{codeError}</div>
-              </div>
-            )}
-
-            <div className="flex-1 border border-[#222222] rounded-lg overflow-hidden bg-[#0a0a0a]">
-              <textarea
-                id="code-editor-textarea"
-                value={codeDraft}
-                onChange={(e) => setCodeDraft(e.target.value)}
-                spellCheck={false}
-                className="w-full h-full p-3 font-mono text-xs text-blue-200 bg-[#0a0a0a] resize-none focus:outline-none leading-relaxed"
-              />
-            </div>
-          </div>
-        )}
+        {bottomPanelTab === 'code' && <CodeEditorTab />}
 
         {/* TAB 2: REVISION HISTORY & INDEPENDENT RECOVERY */}
         {bottomPanelTab === 'history' && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs pb-1 border-b border-[#222222]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs pb-2 border-b border-[#222222]">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-[#cccccc]">Granular Timeline</span>
                 <span className="text-[#555555]">•</span>
-                <span className="text-[#888888]">
-                  Restore any revision per element and per viewport without rolling back unrelated work.
+                <span className="text-[#888888] text-[11px]">
+                  Chronological revisions with independent element and property level recovery.
                 </span>
               </div>
               <span className="font-mono text-[#888888] text-[11px]">
-                Current Version: #{template.version}
+                Canonical Rev: <span className="text-white font-bold">#{template.version}</span> ({template.history.length} entries)
               </span>
             </div>
 
-            <div className="space-y-2">
-              {template.history.map((entry, index) => (
-                <div
-                  key={entry.id}
-                  className="p-3 bg-[#141414] border border-[#222222] rounded-lg text-xs space-y-2 hover:border-[#333333] transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] text-[#666666]">
-                        {new Date(entry.timestamp).toLocaleTimeString()}
-                      </span>
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono uppercase flex items-center gap-1 ${
-                          entry.source === 'ai'
-                            ? 'bg-blue-950 text-blue-300 border border-blue-800'
-                            : entry.source === 'code'
-                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                            : entry.source === 'restore'
-                            ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                            : 'bg-[#1e1e1e] text-[#cccccc]'
-                        }`}
-                      >
-                        {entry.source === 'ai' && <Sparkles className="w-2.5 h-2.5" />}
-                        {entry.source === 'code' && <Code className="w-2.5 h-2.5" />}
-                        {entry.source === 'restore' && <RotateCcw className="w-2.5 h-2.5" />}
-                        {entry.source === 'canvas' && <Sliders className="w-2.5 h-2.5" />}
-                        {entry.source}
-                      </span>
-                      <span className="font-semibold text-[#e0e0e0]">{entry.summary}</span>
-                    </div>
+            {/* Filter and Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1 bg-[#141414] border border-[#222222] rounded-lg p-0.5">
+                {(['all', 'canvas', 'code', 'ai', 'restore'] as const).map((src) => (
+                  <button
+                    key={src}
+                    id={`filter-src-${src}`}
+                    onClick={() => setHistorySourceFilter(src)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors ${
+                      historySourceFilter === src
+                        ? 'bg-[#1e1e1e] text-white shadow-sm border border-[#333333]'
+                        : 'text-[#888888] hover:text-[#e0e0e0]'
+                    }`}
+                  >
+                    {src === 'all' ? 'All Sources' : src}
+                  </button>
+                ))}
+              </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1e1e1e] text-[#888888] border border-[#262626]">
-                        Scope: {entry.viewport}
-                      </span>
-                      <span className="text-[10px] font-mono text-[#666666]">
-                        Rev #{entry.baseRevision} → #{entry.newRevision}
-                      </span>
-                    </div>
-                  </div>
+              <div className="relative flex-1 max-w-xs">
+                <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder="Filter revisions by element, text, rev #..."
+                  className="w-full bg-[#141414] border border-[#222222] rounded-lg pl-8 pr-7 py-1 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-blue-500"
+                />
+                {historySearch && (
+                  <button
+                    onClick={() => setHistorySearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#666666] hover:text-white"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
 
-                  {/* Elements modified & Per-Element Restore Buttons */}
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {entry.elementIds.map((elId) => {
-                      const el = template.elements[elId];
-                      return (
-                        <div
-                          key={elId}
-                          className="flex items-center gap-2 bg-[#0a0a0a] px-2.5 py-1 rounded border border-[#222222]"
-                        >
-                          <span className="text-[#e0e0e0] font-medium">{el?.name || elId}</span>
-                          <span className="text-[10px] font-mono text-[#666666]">#{elId}</span>
-                          <button
-                            id={`restore-btn-${elId}-${entry.id}`}
-                            onClick={() => restoreElement(elId, entry.viewport, entry.id)}
-                            className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-blue-950/80 hover:bg-blue-900 text-blue-300 border border-blue-800 rounded font-medium transition-colors"
-                            title={`Restore ${el?.name || elId} to this historical state (${entry.viewport})`}
+            {/* Revisions list */}
+            {filteredHistory.length === 0 ? (
+              <div className="text-center py-10 text-[#666666] text-xs">
+                {template.history.length === 0
+                  ? 'No revision entries recorded yet. Perform an edit on canvas, code, or AI to start history.'
+                  : 'No revisions match the current search / filter criteria.'}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredHistory.map((entry) => {
+                  const isExpanded = !!expandedEntries[entry.id];
+                  const hasDetailedChanges = entry.changes && Object.keys(entry.changes).length > 0;
+
+                  return (
+                    <div
+                      key={entry.id}
+                      className="p-3 bg-[#141414] border border-[#222222] rounded-lg text-xs space-y-2.5 hover:border-[#333333] transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] text-[#666666]">
+                            {new Date(entry.timestamp).toLocaleTimeString()}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono uppercase flex items-center gap-1 ${
+                              entry.source === 'ai'
+                                ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                                : entry.source === 'code'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                : entry.source === 'restore'
+                                ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                : 'bg-[#1e1e1e] text-[#cccccc]'
+                            }`}
                           >
-                            <RotateCcw className="w-2.5 h-2.5" /> Restore This Element
+                            {entry.source === 'ai' && <Sparkles className="w-2.5 h-2.5" />}
+                            {entry.source === 'code' && <Code className="w-2.5 h-2.5" />}
+                            {entry.source === 'restore' && <RotateCcw className="w-2.5 h-2.5" />}
+                            {entry.source === 'canvas' && <Sliders className="w-2.5 h-2.5" />}
+                            {entry.source}
+                          </span>
+                          <span className="font-semibold text-[#e0e0e0]">{entry.summary}</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1e1e1e] text-[#888888] border border-[#262626]">
+                            Scope: {entry.viewport}
+                          </span>
+                          <span className="text-[10px] font-mono text-[#666666]">
+                            Rev #{entry.baseRevision} → #{entry.newRevision}
+                          </span>
+                          <button
+                            id={`restore-revision-btn-${entry.id}`}
+                            onClick={() => restoreRevision(entry.id)}
+                            className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800 rounded font-medium transition-colors ml-1 cursor-pointer"
+                            title={`Restore entire template to Revision #${entry.newRevision}`}
+                          >
+                            <RotateCcw className="w-2.5 h-2.5" /> Revert to this Rev
                           </button>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+                      </div>
+
+                      {/* Elements modified & Per-Element and Per-Property Recovery */}
+                      <div className="space-y-2 pt-1 border-t border-[#1a1a1a]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {entry.elementIds.map((elId) => {
+                            const el = template.elements[elId];
+                            const changeInfo = entry.changes?.[elId];
+
+                            return (
+                              <div
+                                key={elId}
+                                className="flex items-center gap-1.5 bg-[#0a0a0a] px-2.5 py-1 rounded border border-[#222222]"
+                              >
+                                <button
+                                  onClick={() => setSelectedIds([elId])}
+                                  className="text-[#e0e0e0] font-medium hover:text-blue-400 transition-colors flex items-center gap-1"
+                                  title={`Click to focus and select ${el?.name || elId} on canvas`}
+                                >
+                                  <MousePointer className="w-2.5 h-2.5 text-[#666666]" />
+                                  <span>{el?.name || elId}</span>
+                                </button>
+                                <span className="text-[10px] font-mono text-[#666666]">#{elId}</span>
+
+                                <button
+                                  id={`restore-btn-${elId}-${entry.id}`}
+                                  onClick={() => restoreElement(elId, entry.viewport, entry.id)}
+                                  className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-blue-950/80 hover:bg-blue-900 text-blue-300 border border-blue-800 rounded font-medium transition-colors ml-1 cursor-pointer"
+                                  title={`Restore ${el?.name || elId} to this historical state (${entry.viewport})`}
+                                >
+                                  <RotateCcw className="w-2.5 h-2.5" /> Restore Element
+                                </button>
+                              </div>
+                            );
+                          })}
+
+                          {hasDetailedChanges && (
+                            <button
+                              onClick={() => toggleExpandEntry(entry.id)}
+                              className="text-[11px] text-[#888888] hover:text-[#cccccc] px-2 py-0.5 rounded bg-[#161616] border border-[#262626] flex items-center gap-1 transition-colors ml-auto"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  <ChevronDown className="w-3 h-3" /> Hide Property Diffs
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronRight className="w-3 h-3" /> Show Property Diffs ({Object.keys(entry.changes || {}).length})
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Detailed Property Diffs & Granular Property Restore */}
+                        {isExpanded && entry.changes && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 bg-[#0c0c0c] p-2 rounded-lg border border-[#1f1f1f]">
+                            {Object.entries(entry.changes).map(([elId, ch]) => {
+                              const el = template.elements[elId];
+                              const beforeKeys = Object.keys(ch.before || {}) as Array<keyof EditableProperties>;
+
+                              return (
+                                <div key={elId} className="bg-[#121212] p-2 rounded border border-[#222222] space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px] font-semibold text-[#cccccc]">
+                                    <span>{el?.name || ch.elementName || elId}</span>
+                                    <span className="text-[10px] font-mono text-blue-300">{ch.targetViewport}</span>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    {beforeKeys.map((propKey) => {
+                                      const beforeVal = ch.before[propKey];
+                                      const afterVal = ch.after[propKey];
+
+                                      return (
+                                        <div
+                                          key={String(propKey)}
+                                          className="flex items-center justify-between text-[10px] font-mono bg-[#080808] p-1.5 rounded border border-[#1a1a1a]"
+                                        >
+                                          <div className="flex items-center gap-1.5 overflow-hidden">
+                                            <span className="text-blue-300 font-bold">{String(propKey)}:</span>
+                                            <span className="text-rose-400 line-through truncate max-w-[80px]">
+                                              {JSON.stringify(beforeVal)}
+                                            </span>
+                                            <span className="text-[#666666]">→</span>
+                                            <span className="text-emerald-400 truncate max-w-[80px]">
+                                              {JSON.stringify(afterVal)}
+                                            </span>
+                                          </div>
+
+                                          <button
+                                            id={`restore-prop-${elId}-${String(propKey)}-${entry.id}`}
+                                            onClick={() => restoreProperty(elId, propKey, ch.targetViewport, entry.id)}
+                                            className="px-1.5 py-0.5 bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800 rounded font-sans text-[9px] font-medium transition-colors shrink-0 ml-1 cursor-pointer"
+                                            title={`Restore only "${String(propKey)}" to historical value (${JSON.stringify(beforeVal)})`}
+                                          >
+                                            Restore Prop
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

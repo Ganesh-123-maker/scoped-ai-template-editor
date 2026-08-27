@@ -8,7 +8,7 @@
 import { create } from 'zustand';
 import { generateDeterministicAIProposal } from '../core/aiScenarioEngine';
 import { commitEdit, CommitResult, EditCommand } from '../commands';
-import { restoreElementRevision } from '../core/recovery';
+import { restoreElementRevision, restoreSingleProperty, restoreFullRevision } from '../core/recovery';
 import { validateAIProposal } from '../core/validation';
 import { generateUniqueElementId } from '../core/selection';
 import { INITIAL_TEMPLATE } from '../data/initialTemplate';
@@ -87,6 +87,7 @@ interface EditorState {
   // Modals
   isResetModalOpen: boolean;
   isShortcutsModalOpen: boolean;
+  isArchitectureModalOpen: boolean;
 
   // Actions
   setActiveViewport: (vp: ActiveViewport) => void;
@@ -116,6 +117,12 @@ interface EditorState {
 
   // Independent Recovery Actions
   restoreElement: (elementId: string, viewport: Viewport, historyEntryId: string) => boolean;
+  restoreProperty: (elementId: string, propertyKey: keyof EditableProperties, viewport: Viewport, historyEntryId: string) => boolean;
+  restoreRevision: (historyEntryId: string) => boolean;
+  undo: () => boolean;
+  redo: () => boolean;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
 
   // Code Editor Synchronization
   setCodeDraft: (draft: string) => void;
@@ -136,6 +143,8 @@ interface EditorState {
   resetToInitialTemplate: () => void;
   openShortcutsModal: () => void;
   closeShortcutsModal: () => void;
+  openArchitectureModal: () => void;
+  closeArchitectureModal: () => void;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   clearToast: () => void;
 }
@@ -162,6 +171,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     toast: null,
     isResetModalOpen: false,
     isShortcutsModalOpen: false,
+    isArchitectureModalOpen: false,
 
     setActiveViewport: (activeViewport) => {
       set({ activeViewport });
@@ -235,10 +245,23 @@ export const useEditorStore = create<EditorState>((set, get) => {
         persistTemplate(result.nextTemplate);
         const isExternal = command.source !== 'code';
 
+        const nextProposal =
+          state.activeProposal &&
+          (state.activeProposal.status === 'pending' || state.activeProposal.status === 'partially_accepted') &&
+          state.activeProposal.baseRevision < result.nextTemplate.version &&
+          command.source !== 'ai'
+            ? {
+                ...state.activeProposal,
+                status: 'stale' as const,
+                validationError: 'This proposal is based on an older revision.',
+              }
+            : state.activeProposal;
+
         set({
           template: result.nextTemplate,
           latestChangeSummary: result.changeSummary || null,
           codeError: null,
+          activeProposal: nextProposal,
         });
 
         if (isExternal) {
@@ -329,6 +352,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const proposal = state.activeProposal;
       if (!proposal) return;
 
+      // Safe concurrency guard: detect if proposal was generated on older revision
+      if (proposal.baseRevision !== state.template.version) {
+        set({
+          activeProposal: {
+            ...proposal,
+            status: 'stale',
+            validationError: 'This proposal is based on an older revision.',
+          },
+        });
+        get().showToast('This proposal is based on an older revision. Please generate a new proposal.', 'error');
+        return;
+      }
+
       const targetItem = proposal.items.find((i) => i.elementId === elementId);
       if (!targetItem || targetItem.status !== 'pending') return;
 
@@ -337,7 +373,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         source: 'ai',
         targetIds: [elementId],
         viewport: targetItem.targetViewport,
-        baseRevision: state.template.version,
+        baseRevision: proposal.baseRevision,
         changes: {
           [elementId]: targetItem.after,
         },
@@ -386,6 +422,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const proposal = state.activeProposal;
       if (!proposal) return;
 
+      // Safe concurrency guard: detect if proposal was generated on older revision
+      if (proposal.baseRevision !== state.template.version) {
+        set({
+          activeProposal: {
+            ...proposal,
+            status: 'stale',
+            validationError: 'This proposal is based on an older revision.',
+          },
+        });
+        get().showToast('This proposal is based on an older revision. Please generate a new proposal.', 'error');
+        return;
+      }
+
       const pendingItems = proposal.items.filter((i) => i.status === 'pending' || i.status === 'accepted');
       if (pendingItems.length === 0) return;
 
@@ -401,7 +450,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         source: 'ai',
         targetIds,
         viewport: proposal.viewport,
-        baseRevision: state.template.version,
+        baseRevision: proposal.baseRevision,
         changes,
         summary: `AI Applied: "${proposal.instruction}" across ${targetIds.length} element(s)`,
       };
@@ -451,6 +500,131 @@ export const useEditorStore = create<EditorState>((set, get) => {
         get().showToast(result.errors?.[0] || 'Restore failed', 'error');
         return false;
       }
+    },
+
+    restoreProperty: (elementId, propertyKey, viewport, historyEntryId) => {
+      const state = get();
+      const result = restoreSingleProperty(state.template, elementId, propertyKey, viewport, historyEntryId);
+      if (result.success) {
+        persistTemplate(result.nextTemplate);
+        set({
+          template: result.nextTemplate,
+          latestChangeSummary: result.changeSummary,
+        });
+        get().syncCodeDraftFromTemplate();
+        get().showToast(result.changeSummary?.summaryText || `Property ${String(propertyKey)} restored`, 'success');
+        return true;
+      } else {
+        get().showToast(result.errors?.[0] || 'Property restore failed', 'error');
+        return false;
+      }
+    },
+
+    restoreRevision: (historyEntryId) => {
+      const state = get();
+      const result = restoreFullRevision(state.template, historyEntryId);
+      if (result.success) {
+        persistTemplate(result.nextTemplate);
+        set({
+          template: result.nextTemplate,
+          latestChangeSummary: result.changeSummary,
+        });
+        get().syncCodeDraftFromTemplate();
+        get().showToast(result.changeSummary?.summaryText || 'Full revision restored', 'success');
+        return true;
+      } else {
+        get().showToast(result.errors?.[0] || 'Full revision restore failed', 'error');
+        return false;
+      }
+    },
+
+    canUndo: () => {
+      const history = get().template.history || [];
+      return history.length > 0 && history[0]?.source !== undefined;
+    },
+
+    canRedo: () => {
+      // In append-only chronological history architectures, every action creates a new revision.
+      // Redo can revert the most recent 'restore' or rollback operation.
+      const history = get().template.history || [];
+      return history.length > 1 && history[0]?.source === 'restore';
+    },
+
+    undo: () => {
+      const state = get();
+      const history = state.template.history || [];
+      if (history.length === 0) {
+        get().showToast('No history available to undo', 'info');
+        return false;
+      }
+
+      const topEntry = history[0];
+      // Undo topEntry by rolling back its changes through the validation pipeline
+      const targetIds = topEntry.elementIds.filter((id) => state.template.elements[id]);
+      if (targetIds.length === 0) {
+        get().showToast('Cannot undo: Elements no longer exist', 'error');
+        return false;
+      }
+
+      const rollbackChanges: Record<string, Partial<EditableProperties>> = {};
+      for (const id of targetIds) {
+        if (topEntry.changes?.[id]?.before) {
+          rollbackChanges[id] = topEntry.changes[id].before;
+        } else if (topEntry.snapshot?.[id]) {
+          rollbackChanges[id] = topEntry.snapshot[id].base;
+        }
+      }
+
+      const undoCommand: EditCommand = {
+        source: 'restore',
+        targetIds,
+        viewport: topEntry.viewport || 'all',
+        baseRevision: state.template.version,
+        changes: rollbackChanges,
+        summary: `Undo: Reverted "${topEntry.summary || 'Previous action'}"`,
+      };
+
+      const result = state.commitCommand(undoCommand);
+      if (result.success) {
+        get().showToast(`✓ Undid: ${topEntry.summary || 'Previous edit'}`, 'success');
+        return true;
+      }
+      return false;
+    },
+
+    redo: () => {
+      const state = get();
+      const history = state.template.history || [];
+      if (history.length < 2 || history[0]?.source !== 'restore') {
+        get().showToast('No restore action available to redo', 'info');
+        return false;
+      }
+
+      const prevRestore = history[0];
+      const targetIds = prevRestore.elementIds.filter((id) => state.template.elements[id]);
+      const redoChanges: Record<string, Partial<EditableProperties>> = {};
+
+      for (const id of targetIds) {
+        if (prevRestore.changes?.[id]?.before) {
+          redoChanges[id] = prevRestore.changes[id].before;
+        }
+      }
+
+      const redoCommand: EditCommand = {
+        source: 'restore',
+        targetIds,
+        viewport: prevRestore.viewport || 'all',
+        baseRevision: state.template.version,
+        changes: redoChanges,
+        summary: `Redo: Reapplied changes reverted by previous undo`,
+      };
+
+      const result = state.commitCommand(redoCommand);
+      if (result.success) {
+        get().showToast('✓ Redid previous action', 'success');
+        return true;
+      }
+      return false;
     },
 
     setCodeDraft: (codeDraft) => {
@@ -706,6 +880,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     openShortcutsModal: () => set({ isShortcutsModalOpen: true }),
     closeShortcutsModal: () => set({ isShortcutsModalOpen: false }),
+
+    openArchitectureModal: () => set({ isArchitectureModalOpen: true }),
+    closeArchitectureModal: () => set({ isArchitectureModalOpen: false }),
 
     showToast: (message, type = 'info') => {
       set({ toast: { message, type, id: Date.now() } });

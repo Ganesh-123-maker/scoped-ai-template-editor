@@ -150,7 +150,7 @@ export interface AIProposal {
   scope?: Viewport;
   timestamp: number;
   items: AIProposalItem[];
-  status: 'pending' | 'partially_accepted' | 'accepted' | 'rejected' | 'invalid';
+  status: 'pending' | 'partially_accepted' | 'accepted' | 'rejected' | 'invalid' | 'stale';
   validationError?: string;
 }
 
