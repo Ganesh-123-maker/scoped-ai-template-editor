@@ -23,7 +23,10 @@ export default defineConfig(() => {
     },
 
     preview: {
-      allowedHosts: ['scoped-ai-template-editor.onrender.com'],
+      port: process.env.PORT ? parseInt(process.env.PORT, 10) : 4173,
+      allowedHosts: process.env.RENDER_EXTERNAL_HOSTNAME
+        ? [process.env.RENDER_EXTERNAL_HOSTNAME]
+        : [],
     },
   };
 });
