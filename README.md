@@ -6,10 +6,7 @@ AI proposes scoped changes.
 Users review them.
 Accepted changes pass through validation and become recoverable revisions.
 
-## Screenshots
-
-*Visual Editor, Scoped AI Proposal Review, History & Granular Recovery, and Bidirectional Code Sync.*
-
+Live Link: https://scoped-ai-template-editor-3.onrender.com/
 ---
 
 ## Overview
